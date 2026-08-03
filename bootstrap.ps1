@@ -108,6 +108,21 @@ if (-not (Test-Sdk8)) {
     }
 } else { Ok ".NET 8 SDK present" }
 
+# HTTPS dev certificate: the apps serve https, the admin calls the API over https, and
+# browsers need to trust the cert for C2/C3 checks - untrusted certs cause silent failures.
+$null = dotnet dev-certs https --check --trust 2>&1
+if ($LASTEXITCODE -ne 0) {
+    if ($InstallPrereqs) {
+        Info "Trusting the ASP.NET Core HTTPS dev certificate (a confirmation dialog will appear)..."
+        dotnet dev-certs https --trust
+        $null = dotnet dev-certs https --check --trust 2>&1
+        if ($LASTEXITCODE -ne 0) { Fail "dev certificate still not trusted; run 'dotnet dev-certs https --trust' manually and accept the dialog." }
+        Ok "HTTPS dev certificate trusted"
+    } else {
+        Fail "ASP.NET Core HTTPS dev certificate is missing or untrusted. Re-run with -InstallPrereqs, or run: dotnet dev-certs https --trust"
+    }
+} else { Ok "HTTPS dev certificate trusted" }
+
 if (-not (Test-LocalDb)) {
     if ($InstallPrereqs) {
         Info "Installing SQL Server LocalDB (SQL 2019 Express media downloader; a UAC prompt will appear)..."

@@ -1,0 +1,33 @@
+== verify-c2 2026-08-03 11:01:14 label=baseline ==
+[11:01:22] apps not fully up (web=False api=False); sweeping eShopOnWeb processes...
+[11:01:25] starting Web (cold DB can take a while to migrate+seed)...
+[11:01:33] Web ready on http://localhost:5000/
+[11:01:33] starting PublicApi...
+[11:01:42] PublicApi ready on https://localhost:5099/api
+[11:01:42] config: label=baseline expectStale=True expectFresh=True absenceMode=False
+[11:01:42] state predicates: OLD='Prism\ White\ T-Shirt' NEW='C2\ Probe\ White\ T-Shirt'
+[11:01:42] warm phase: polling every 10s until pre-change state seen 3x consecutively...
+[11:01:42] warm poll 1: state=OLD (1/3)
+[11:01:52] warm poll 2: state=OLD (2/3)
+[11:02:02] warm poll 3: state=OLD (3/3)
+[11:02:02] cache warm: pre-change state confirmed under traffic
+[11:02:02] renaming item 3 'Prism White T-Shirt' -> 'C2 Probe White T-Shirt' via PublicApi PUT...
+[11:02:02] rename accepted by the API (database now holds the new state)
+[11:02:02] staleness phase: polling every 10s for 90s...
+[11:02:13] staleness poll t=+10s state=OLD
+[11:02:23] staleness poll t=+20s state=OLD
+[11:02:33] staleness poll t=+30s state=OLD
+[11:02:43] staleness poll t=+40s state=OLD
+[11:02:53] staleness poll t=+50s state=OLD
+[11:03:03] staleness poll t=+60s state=OLD
+[11:03:13] staleness poll t=+70s state=OLD
+[11:03:23] staleness poll t=+80s state=OLD
+[11:03:33] staleness poll t=+90s state=OLD
+[11:03:33] freshness phase: 40s with NO storefront traffic (keep browsers off http://localhost:5000/)...
+[11:04:13] freshness poll t=+130s (after 40s idle): state=NEW
+[11:04:13] VERDICT STALE-UNDER-TRAFFIC=True (old state last seen t=+90s; new state never seen under traffic; expected True)
+[11:04:13] VERDICT FRESH-AFTER-IDLE=True (expected True)
+[11:04:13] RESULT PASS: observed behavior matches expectations
+[11:04:13] cleanup: reverted item 3 name to 'Prism White T-Shirt'
+[11:04:15] cleanup: apps stopped (-StopApps)
+[11:04:15] log written to E:\code\eshop-demo\eshop-demo-kit\runs\baseline\c2-log.txt

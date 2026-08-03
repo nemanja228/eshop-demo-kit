@@ -32,7 +32,9 @@ The talk's scoreboard shows A, B, and C only. D/E/F live on one backup slide.
 5. Scoring only against the pre-registered rubric (prompts/rubric.md), frozen before the
    first scored run.
 6. Record the exact model ID for every session (a scoreboard across mixed model snapshots
-   is worthless).
+   is worthless). Same for reasoning-effort/thinking settings: every cell runs at the
+   model's DEFAULT effort (the as-shipped experience — hand-tuning invites thumb-on-scale
+   accusations); record the effective setting per rep alongside the model ID.
 7. Machine-level context: before scored runs, check `~/.claude/CLAUDE.md` (and any
    user-level instruction files). Either move them aside for the runs or record their
    content in runs/runs.md as a disclosed constant. Same treatment for user-level hooks.

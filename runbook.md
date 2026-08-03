@@ -58,9 +58,10 @@ The talk's scoreboard shows A, B, and C only. D/E/F live on one backup slide.
   archiving vs sale-pricing escalation; whether correctness rows will differentiate or the
   construction-guaranteed rows lead the narrative.
 - **Phase 4 — matrix.** Branch per rep: `cell-a-rep1`, `cell-b-rep2`, ... from `demo-base`.
-  Fresh session per rep in the fork clone. One-shot cells can run headless
-  (`claude -p @prompts/task-brief.md --model <id>` with JSON output for cost/duration
-  capture); planned cells run interactively (plan session + one session per task).
+  Fresh session per rep in the fork clone. ALL scored cells run interactively with the
+  operator present: a headless run cannot ask questions, which would structurally rig the
+  "decisions surfaced" rubric dimension against one-shots. (Headless is fine for extra
+  unscored reps.) Planned cells = plan session + one session per task.
   Capture per rep (into runs/<cell-rep>/): final diff (`git diff demo-base`), /context
   screenshot at end, cost/token readout, wall-clock, session artifacts (spec.md,
   tasklist.md for planned cells), notes. Log every rep in runs/runs.md: cell, rep, branch,

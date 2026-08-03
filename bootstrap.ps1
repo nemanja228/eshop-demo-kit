@@ -14,8 +14,8 @@ param(
     [string]$ForkUrl   = 'git@github.com:nemanja228/eShopOnWeb.git',
     [string]$TargetDir = '',
     [string]$PinnedTag = 'demo-base',
-    # Set to the demo-base commit SHA once the tag exists; 'TBD' skips the assert with a warning.
-    [string]$PinnedSha = 'TBD',
+    # demo-base = pinned upstream HEAD (4da8212) + the reviewed CLAUDE.md commit.
+    [string]$PinnedSha = '555ce7179aa2c35a391b98676e68af12957c3332',
     [switch]$SkipBuild,
     [switch]$SkipTests
 )

@@ -1,6 +1,6 @@
 # eShopOnWeb demo — setup report
 
-Status: Phase 0 IN PROGRESS. Recon complete; build/tests/app-run BLOCKED on .NET 8 SDK install; push BLOCKED on fork creation.
+Status: Phase 0 COMPLETE on the work machine; Phase 1 (CLAUDE.md + demo-base tag) done locally. Pushes PENDING creation of both GitHub repos (fork + eshop-demo-kit) in browser.
 Date: 2026-08-03. Working session: design session on work machine (recon by read-only subagent).
 
 ## Environment
@@ -12,12 +12,18 @@ Date: 2026-08-03. Working session: design session on work machine (recon by read
 - `global.json`: SDK `8.0.x`, `rollForward: latestFeature` (will NOT use 6.0/10.0). Installed SDKs: 6.0.202, 10.0.302 → **.NET 8 SDK install pending user approval** (`winget install Microsoft.DotNet.SDK.8`).
 - gh CLI on this machine is authenticated as the WORK account (`po-nemanja-rakovic`) — do not use gh for fork-side API operations.
 
-## Baseline (pending SDK)
+## Baseline (verified 2026-08-03, work machine)
 
-- [ ] `dotnet build` result
-- [ ] `dotnet test` per-project totals (UnitTests / IntegrationTests / FunctionalTests / PublicApiIntegrationTests)
-- [ ] Web + PublicApi + BlazorAdmin running locally, login verified
-- [ ] Tag `baseline-upstream` pushed; CLAUDE.md authored; tag `demo-base` pushed
+- SDK: installed 8.0.423 via winget (alongside 6.0.202, 10.0.302). global.json resolves.
+- Build `eShopOnWeb.sln` Debug: **0 errors**, 13 warnings (xUnit2013 analyzer style, pre-existing upstream).
+- Tests, all green — **74/74**: UnitTests 44, IntegrationTests 3, PublicApiIntegrationTests 15, FunctionalTests 12. Test suite needs no LocalDB (in-memory providers).
+- Apps verified on LocalDB (auto-migrate + seed on first start):
+  - Web `dotnet run --launch-profile Web` → http://localhost:5000 / https://localhost:5001, HTTP 200, seeded catalog renders (".NET Bot Black Sweatshirt" present).
+  - PublicApi `--launch-profile PublicApi` → :5098/:5099, `GET /api/catalog-items?pageSize=3` returns seeded JSON.
+  - `/admin` serves the Blazor WASM host page (client-side auth; admin API authorization covered by PublicApiIntegrationTests).
+  - HTTPS dev cert present and valid.
+- `baseline-upstream` tag created locally at `4da8212...` (push pending fork creation).
+- [ ] Push fork (main + tags) and kit repo once both GitHub repos exist.
 
 ## Recon findings (read-only, verified with file:line citations by subagent)
 

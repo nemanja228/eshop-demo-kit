@@ -38,6 +38,14 @@ The talk's scoreboard shows A, B, and C only. D/E/F live on one backup slide.
    content in runs/runs.md as a disclosed constant. Same treatment for user-level hooks.
 8. Dry-run learnings may update the rubric and FAQ. They must NEVER update the task brief
    or the repo's CLAUDE.md (that would leak hints into the measured runs).
+9. **Auto-memory.** Claude Code persists per-project memory across sessions. If enabled,
+   a scored rep can silently recall what an earlier rep learned, breaking rep
+   independence. Before phase 3: check `~/.claude/projects/<fork-dir-slug>/memory/`;
+   either disable auto-memory on this machine or delete that project's memory directory
+   as part of the between-reps reset (add it to the reset procedure in runs/runs.md).
+   For the same reason, do not run helper or exploration sessions in the fork directory;
+   agents enter that directory only for scored/dry-run reps, and only ever receive the
+   three prompt texts from prompts/ (see kit README, "Who reads what").
 
 ## Phases
 

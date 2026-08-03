@@ -17,7 +17,10 @@ param(
     # demo-base = pinned upstream HEAD (4da8212) + the reviewed CLAUDE.md commit.
     [string]$PinnedSha = '555ce7179aa2c35a391b98676e68af12957c3332',
     [switch]$SkipBuild,
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    # Install missing prerequisites (.NET 8 SDK via winget, SQL LocalDB via the SQL 2019
+    # Express media downloader). Machine-global installs; UAC prompts will appear.
+    [switch]$InstallPrereqs
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,21 +58,57 @@ Ok "no ancestor CLAUDE.md above the run directory"
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Fail "git not found on PATH." }
 Ok "git present"
 
-if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
-    Fail ".NET SDK not found. Install: winget install Microsoft.DotNet.SDK.8"
+function Refresh-Path {
+    $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                [Environment]::GetEnvironmentVariable('Path', 'User')
 }
-$sdks = @(dotnet --list-sdks)
-if (-not ($sdks | Where-Object { $_ -match '^8\.0\.' })) {
-    Fail (".NET 8 SDK required (global.json pins 8.0.x, rollForward=latestFeature; other majors will NOT be used)." +
-          " Install: winget install Microsoft.DotNet.SDK.8`nInstalled SDKs:`n" + ($sdks -join "`n"))
+function Test-Sdk8 {
+    if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) { return $false }
+    return [bool](@(dotnet --list-sdks) | Where-Object { $_ -match '^8\.0\.' })
 }
-Ok ".NET 8 SDK present"
+function Test-LocalDb {
+    if (Get-Command sqllocaldb -ErrorAction SilentlyContinue) { return $true }
+    # fresh installs may not be on this process's PATH yet
+    $exe = Get-ChildItem 'C:\Program Files\Microsoft SQL Server' -Filter sqllocaldb.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($exe) { $env:Path += ';' + $exe.DirectoryName; return $true }
+    return $false
+}
 
-if (-not (Get-Command sqllocaldb -ErrorAction SilentlyContinue)) {
-    Fail "SQL Server LocalDB not found. The default DB mode needs it (in-memory mode skips EF migrations entirely, which this demo must exercise). Install SQL Server Express LocalDB, or via the Visual Studio installer."
-}
+if (-not (Test-Sdk8)) {
+    if ($InstallPrereqs) {
+        if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail "winget not available; install the .NET 8 SDK manually (see kit README)." }
+        Info "Installing .NET 8 SDK via winget (a UAC prompt may appear)..."
+        winget install Microsoft.DotNet.SDK.8 --silent --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) { Fail "winget install of the .NET 8 SDK failed (exit $LASTEXITCODE)." }
+        Refresh-Path
+        if (-not (Test-Sdk8)) { Fail ".NET 8 SDK installed but not detected in this process; open a NEW terminal and re-run bootstrap." }
+        Ok ".NET 8 SDK installed"
+    } else {
+        Fail ".NET 8 SDK required (global.json pins 8.0.x; other majors will NOT be used). Re-run with -InstallPrereqs, or: winget install Microsoft.DotNet.SDK.8"
+    }
+} else { Ok ".NET 8 SDK present" }
+
+if (-not (Test-LocalDb)) {
+    if ($InstallPrereqs) {
+        Info "Installing SQL Server LocalDB (SQL 2019 Express media downloader; a UAC prompt will appear)..."
+        $tmp = Join-Path $env:TEMP 'eshop-demo-localdb'
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $ssei = Join-Path $tmp 'SQL2019-SSEI-Expr.exe'
+        Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/?linkid=866658' -OutFile $ssei
+        Start-Process -FilePath $ssei -ArgumentList '/Action=Download', '/MediaType=LocalDB', "/MediaPath=$tmp", '/Quiet' -Wait
+        $msi = Get-ChildItem $tmp -Filter 'SqlLocalDB.msi' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $msi) { Fail "LocalDB media download produced no SqlLocalDB.msi; install manually (kit README, 'Installing LocalDB')." }
+        try {
+            Start-Process msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" IACCEPTSQLLOCALDBLICENSETERMS=YES /qn /norestart" -Verb RunAs -Wait
+        } catch { Fail "LocalDB MSI install was cancelled or failed: $($_.Exception.Message)" }
+        Refresh-Path
+        if (-not (Test-LocalDb)) { Fail "LocalDB installed but not detected in this process; open a NEW terminal and re-run bootstrap." }
+        Ok "LocalDB installed"
+    } else {
+        Fail "SQL Server LocalDB not found (default DB mode needs it; in-memory mode skips EF migrations, which this demo must exercise). Re-run with -InstallPrereqs, or install manually (kit README, 'Installing LocalDB')."
+    }
+} else { Ok "LocalDB present" }
 $null = sqllocaldb info 2>&1
-Ok "LocalDB present"
 
 # --- clone / pin ---------------------------------------------------------------
 if (-not (Test-Path (Join-Path $resolvedTarget '.git'))) {

@@ -62,6 +62,38 @@ attendee-facing exercise lives in the eShopOnWeb fork, not here.
 
 3. Read `runbook.md` (phases, fairness rules, capture checklist) before any run.
 
+## Build / test / run (day-to-day reference)
+
+All commands run in the FORK clone (the sibling `eShopOnWeb/` directory), never in this kit.
+
+```powershell
+dotnet build eShopOnWeb.sln
+dotnet test  eShopOnWeb.sln     # 74/74 green at demo-base; tests need no database
+```
+
+Run the apps (LocalDB; each app creates, migrates, and seeds its databases automatically
+on first start — start them ONE AT A TIME the first time):
+
+```powershell
+cd src\Web       ; dotnet run --launch-profile Web        # storefront  http://localhost:5000  https://localhost:5001
+cd src\PublicApi ; dotnet run --launch-profile PublicApi  # API         http://localhost:5098  https://localhost:5099
+```
+
+- Admin UI: `/admin` on the Web app; requires PublicApi to be running.
+- Logins: `admin@microsoft.com` / `Pass@word1` (Administrators), `demouser@microsoft.com` / `Pass@word1`.
+- Don't archive/rename ".NET Bot Black Sweatshirt" during manual checks (health checks assert it).
+
+DB reset between reps (from `src\Web`; run `dotnet tool restore` once first — `dotnet-ef`
+is a local tool):
+
+```powershell
+dotnet ef database drop -f -c catalogcontext        -p ..\Infrastructure\Infrastructure.csproj -s Web.csproj
+dotnet ef database drop -f -c appidentitydbcontext  -p ..\Infrastructure\Infrastructure.csproj -s Web.csproj
+```
+
+The next app start recreates and reseeds both databases. Adding a migration uses the same
+`-p`/`-s` shape — see the fork's README, "Updating the database with migrations".
+
 ## Layout
 
 | Path | What |

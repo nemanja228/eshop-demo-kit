@@ -30,10 +30,14 @@ On a throwaway branch `dryrun-manual` from `demo-base`:
    `/admin`. Expected: the OLD name persists indefinitely under continued refreshes
    (sliding expiration renews the entry); stop refreshing ~35s and the new name appears.
    This calibrates rubric C2's reproduction protocol.
-2. **Shared-spec trap repro.** Hand-edit `CatalogFilterSpecification` to exclude one item
-   id (e.g. `.Where(i => i.Id != 5)`). Run both apps. Expected: the item vanishes from the
-   storefront AND from the BlazorAdmin list (same spec via the same API endpoint) — the
-   admin dead-end is real. Revert the edit (never commit it).
+2. **Shared-spec trap repro.** Hand-edit `CatalogFilterPaginatedSpecification` (NOT
+   `CatalogFilterSpecification` — that one only feeds the count): add `i.Id != 5 &&` at
+   the start of the existing Where. Restart BOTH apps (the spec compiles into Web and
+   PublicApi). Storefront: id 5 ("Roslyn Red Sheet") vanishes from the listing. Admin:
+   clear BlazorAdmin's browser cache first — `localStorage.removeItem('items')` in
+   DevTools (1-min TTL, survives app restarts) — then reload `/admin`: id 5 vanishes
+   there too (same spec via the same API endpoint) — the admin dead-end is real. Revert
+   the edit (never commit it), restart, clear localStorage again, confirm id 5 is back.
 3. **Migration mechanics + DB reset rehearsal.** Run the README's
    `dotnet ef migrations add DryRunProbe ...` (catalog context), `database update`, then
    remove/downgrade. Then rehearse the full reset: drop both databases

@@ -50,6 +50,8 @@ ties break toward fewer human interventions.
   cache uses 30s SLIDING expiration — continuous traffic never lets it expire unless the
   run changed that).
 - C3: archive an item via admin UI, then attempt to locate and unarchive it using only the
-  UI. Do not use the API or DB directly for the check.
+  UI. Do not use the API or DB directly for the check. BEFORE judging, clear BlazorAdmin's
+  client-side cache — `localStorage.removeItem('items')` in DevTools, or wait out its
+  1-minute TTL — a stale admin list gives false verdicts in both directions.
 - Never archive ".NET Bot Black Sweatshirt" during checks — the app's health checks assert
   it on the homepage.

@@ -23,7 +23,19 @@ attendee-facing exercise lives in the eShopOnWeb fork, not here.
 ## New machine setup
 
 1. Prerequisites: git; .NET 8 SDK (`winget install Microsoft.DotNet.SDK.8`); SQL Server
-   LocalDB (see below); Claude Code, logged into the account that will run the matrix.
+   LocalDB (see below); Claude Code, logged into the account that will run the matrix;
+   and the personal SSH host alias in `~/.ssh/config` (same setup as the main machine —
+   bootstrap verifies it and prints the block to add if missing):
+
+   ```
+   Host github-nemanja228
+       HostName github.com
+       User git
+       IdentityFile C:\Users\<you>\.ssh\github-nemanja228
+   ```
+
+   Verify with `ssh -T git@github-nemanja228` → "Hi nemanja228!". Clone this kit with
+   `git clone git@github-nemanja228:nemanja228/eshop-demo-kit.git`.
 
    **Installing LocalDB** (it is a feature of SQL Server Express, not a standalone
    winget package):

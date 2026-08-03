@@ -11,7 +11,9 @@ verifies the toolchain, builds, and runs the baseline test suite.
 #>
 [CmdletBinding()]
 param(
-    [string]$ForkUrl   = 'git@github.com:nemanja228/eShopOnWeb.git',
+    # Default assumes the personal SSH host alias from ~/.ssh/config (same setup on all
+    # machines). Pass a plain URL via -ForkUrl if a machine authenticates differently.
+    [string]$ForkUrl   = 'git@github-nemanja228:nemanja228/eShopOnWeb.git',
     [string]$TargetDir = '',
     [string]$PinnedTag = 'demo-base',
     # demo-base = pinned upstream HEAD (4da8212) + the reviewed CLAUDE.md commit.
@@ -57,6 +59,24 @@ Ok "no ancestor CLAUDE.md above the run directory"
 # --- prerequisites -------------------------------------------------------------
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Fail "git not found on PATH." }
 Ok "git present"
+
+# SSH auth preflight: verify the fork URL's host authenticates before anything clones,
+# so a missing alias fails loudly here instead of as a cryptic git error later.
+if ($ForkUrl -match '^git@([^:]+):') {
+    $sshHost = $Matches[1]
+    $sshOut = & { $ErrorActionPreference = 'Continue'; ssh -o StrictHostKeyChecking=accept-new -T "git@$sshHost" 2>&1 } | Out-String
+    if ($sshOut -match 'successfully authenticated') {
+        Ok ("SSH auth to $sshHost works (" + ($sshOut -split "`r?`n")[0].Trim() + ")")
+    } else {
+        Fail ("SSH auth to '$sshHost' failed:`n$($sshOut.Trim())`n" +
+              "This kit assumes the personal SSH host alias in ~/.ssh/config:`n" +
+              "  Host github-nemanja228`n" +
+              "      HostName github.com`n" +
+              "      User git`n" +
+              "      IdentityFile C:\Users\<you>\.ssh\github-nemanja228`n" +
+              "Add it (and the key), or pass -ForkUrl with a URL that works on this machine.")
+    }
+}
 
 function Refresh-Path {
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +

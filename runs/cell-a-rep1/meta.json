@@ -1,0 +1,12 @@
+{
+    "cell":  "a",
+    "rep":  1,
+    "branch":  "cell-a-rep1",
+    "mode":  "one-shot",
+    "model":  "Sonnet",
+    "promptFile":  "prompts/task-brief.md",
+    "permissionMode":  "acceptEdits",
+    "forkDir":  "E:\\code\\eshop-demo\\eShopOnWeb",
+    "demoBaseSha":  "555ce7179aa2c35a391b98676e68af12957c3332",
+    "startedAt":  "2026-08-03T15:01:28.4219181+02:00"
+}

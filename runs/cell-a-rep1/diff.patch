@@ -1,0 +1,1225 @@
+diff --git a/src/ApplicationCore/Entities/CatalogItem.cs b/src/ApplicationCore/Entities/CatalogItem.cs
+index 1b9534d..4275a8a 100644
+--- a/src/ApplicationCore/Entities/CatalogItem.cs
++++ b/src/ApplicationCore/Entities/CatalogItem.cs
+@@ -14,6 +14,7 @@ public class CatalogItem : BaseEntity, IAggregateRoot
+     public CatalogType? CatalogType { get; private set; }
+     public int CatalogBrandId { get; private set; }
+     public CatalogBrand? CatalogBrand { get; private set; }
++    public bool IsArchived { get; private set; }
+ 
+     public CatalogItem(int catalogTypeId,
+         int catalogBrandId,
+@@ -63,6 +64,16 @@ public class CatalogItem : BaseEntity, IAggregateRoot
+         PictureUri = $"images\\products\\{pictureName}?{new DateTime().Ticks}";
+     }
+ 
++    public void Archive()
++    {
++        IsArchived = true;
++    }
++
++    public void Unarchive()
++    {
++        IsArchived = false;
++    }
++
+     public readonly record struct CatalogItemDetails
+     {
+         public string? Name { get; }
+diff --git a/src/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs b/src/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
+index ab8ca57..c976afd 100644
+--- a/src/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
++++ b/src/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
+@@ -5,7 +5,7 @@ namespace Microsoft.eShopWeb.ApplicationCore.Specifications;
+ 
+ public class CatalogFilterPaginatedSpecification : Specification<CatalogItem>
+ {
+-    public CatalogFilterPaginatedSpecification(int skip, int take, int? brandId, int? typeId)
++    public CatalogFilterPaginatedSpecification(int skip, int take, int? brandId, int? typeId, bool includeArchived = false)
+         : base()
+     {
+         if (take == 0)
+@@ -14,7 +14,8 @@ public class CatalogFilterPaginatedSpecification : Specification<CatalogItem>
+         }
+         Query
+             .Where(i => (!brandId.HasValue || i.CatalogBrandId == brandId) &&
+-            (!typeId.HasValue || i.CatalogTypeId == typeId))
++            (!typeId.HasValue || i.CatalogTypeId == typeId) &&
++            (includeArchived || !i.IsArchived))
+             .Skip(skip).Take(take);
+     }
+ }
+diff --git a/src/ApplicationCore/Specifications/CatalogFilterSpecification.cs b/src/ApplicationCore/Specifications/CatalogFilterSpecification.cs
+index 4cdc2ef..5060d60 100644
+--- a/src/ApplicationCore/Specifications/CatalogFilterSpecification.cs
++++ b/src/ApplicationCore/Specifications/CatalogFilterSpecification.cs
+@@ -5,9 +5,10 @@ namespace Microsoft.eShopWeb.ApplicationCore.Specifications;
+ 
+ public class CatalogFilterSpecification : Specification<CatalogItem>
+ {
+-    public CatalogFilterSpecification(int? brandId, int? typeId)
++    public CatalogFilterSpecification(int? brandId, int? typeId, bool includeArchived = false)
+     {
+         Query.Where(i => (!brandId.HasValue || i.CatalogBrandId == brandId) &&
+-            (!typeId.HasValue || i.CatalogTypeId == typeId));
++            (!typeId.HasValue || i.CatalogTypeId == typeId) &&
++            (includeArchived || !i.IsArchived));
+     }
+ }
+diff --git a/src/BlazorAdmin/Pages/CatalogItemPage/List.razor b/src/BlazorAdmin/Pages/CatalogItemPage/List.razor
+index 33d34c5..7be08b7 100644
+--- a/src/BlazorAdmin/Pages/CatalogItemPage/List.razor
++++ b/src/BlazorAdmin/Pages/CatalogItemPage/List.razor
+@@ -30,6 +30,7 @@ else
+                 <th>Name</th>
+                 <th>@nameof(CatalogItem.Description)</th>
+                 <th>@nameof(CatalogItem.Price)</th>
++                <th>Status</th>
+                 <th>Actions</th>
+             </tr>
+         </thead>
+@@ -46,11 +47,34 @@ else
+                     <td>@item.Name</td>
+                     <td>@item.Description</td>
+                     <td>@item.Price</td>
++                    <td>
++                        @if (item.IsArchived)
++                        {
++                            <span class="badge badge-secondary">Archived</span>
++                        }
++                        else
++                        {
++                            <span class="badge badge-success">Active</span>
++                        }
++                    </td>
+                     <td>
+                         <button @onclick="@(() => EditClick(item.Id))" @onclick:stopPropagation="true" class="btn btn-primary">
+                             Edit
+                         </button>
+ 
++                        @if (item.IsArchived)
++                        {
++                            <button @onclick="@(() => UnarchiveClick(item.Id))" @onclick:stopPropagation="true" class="btn btn-secondary">
++                                Unarchive
++                            </button>
++                        }
++                        else
++                        {
++                            <button @onclick="@(() => ArchiveClick(item.Id))" @onclick:stopPropagation="true" class="btn btn-warning">
++                                Archive
++                            </button>
++                        }
++
+                         <button @onclick="@(() => DeleteClick(item.Id))" @onclick:stopPropagation="true" class="btn btn-danger">
+                             Delete
+                         </button>
+diff --git a/src/BlazorAdmin/Pages/CatalogItemPage/List.razor.cs b/src/BlazorAdmin/Pages/CatalogItemPage/List.razor.cs
+index 05fcbc6..4389252 100644
+--- a/src/BlazorAdmin/Pages/CatalogItemPage/List.razor.cs
++++ b/src/BlazorAdmin/Pages/CatalogItemPage/List.razor.cs
+@@ -60,6 +60,18 @@ public partial class List : BlazorComponent
+         await DeleteComponent.Open(id);
+     }
+ 
++    private async Task ArchiveClick(int id)
++    {
++        await CatalogItemService.Archive(id);
++        await ReloadCatalogItems();
++    }
++
++    private async Task UnarchiveClick(int id)
++    {
++        await CatalogItemService.Unarchive(id);
++        await ReloadCatalogItems();
++    }
++
+     private async Task ReloadCatalogItems()
+     {
+         catalogItems = await CatalogItemService.List();
+diff --git a/src/BlazorAdmin/Services/CachedCatalogItemServiceDecorator.cs b/src/BlazorAdmin/Services/CachedCatalogItemServiceDecorator.cs
+index a81d3c7..d08b9be 100644
+--- a/src/BlazorAdmin/Services/CachedCatalogItemServiceDecorator.cs
++++ b/src/BlazorAdmin/Services/CachedCatalogItemServiceDecorator.cs
+@@ -101,6 +101,22 @@ public class CachedCatalogItemServiceDecorator : ICatalogItemService
+         return result;
+     }
+ 
++    public async Task<CatalogItem> Archive(int id)
++    {
++        var result = await _catalogItemService.Archive(id);
++        await RefreshLocalStorageList();
++
++        return result;
++    }
++
++    public async Task<CatalogItem> Unarchive(int id)
++    {
++        var result = await _catalogItemService.Unarchive(id);
++        await RefreshLocalStorageList();
++
++        return result;
++    }
++
+     private async Task RefreshLocalStorageList()
+     {
+         string key = "items";
+diff --git a/src/BlazorAdmin/Services/CatalogItemService.cs b/src/BlazorAdmin/Services/CatalogItemService.cs
+index f3ebfd8..5a80bc0 100644
+--- a/src/BlazorAdmin/Services/CatalogItemService.cs
++++ b/src/BlazorAdmin/Services/CatalogItemService.cs
+@@ -42,6 +42,16 @@ public class CatalogItemService : ICatalogItemService
+         return (await _httpService.HttpDelete<DeleteCatalogItemResponse>("catalog-items", catalogItemId)).Status;
+     }
+ 
++    public async Task<CatalogItem> Archive(int catalogItemId)
++    {
++        return (await _httpService.HttpPut<ArchiveCatalogItemResponse>($"catalog-items/{catalogItemId}/archive", new { })).CatalogItem;
++    }
++
++    public async Task<CatalogItem> Unarchive(int catalogItemId)
++    {
++        return (await _httpService.HttpPut<UnarchiveCatalogItemResponse>($"catalog-items/{catalogItemId}/unarchive", new { })).CatalogItem;
++    }
++
+     public async Task<CatalogItem> GetById(int id)
+     {
+         var brandListTask = _brandService.List();
+@@ -62,7 +72,7 @@ public class CatalogItemService : ICatalogItemService
+ 
+         var brandListTask = _brandService.List();
+         var typeListTask = _typeService.List();
+-        var itemListTask = _httpService.HttpGet<PagedCatalogItemResponse>($"catalog-items?PageSize=10");
++        var itemListTask = _httpService.HttpGet<PagedCatalogItemResponse>($"catalog-items?PageSize=10&includeArchived=true");
+         await Task.WhenAll(brandListTask, typeListTask, itemListTask);
+         var brands = brandListTask.Result;
+         var types = typeListTask.Result;
+@@ -81,7 +91,7 @@ public class CatalogItemService : ICatalogItemService
+ 
+         var brandListTask = _brandService.List();
+         var typeListTask = _typeService.List();
+-        var itemListTask = _httpService.HttpGet<PagedCatalogItemResponse>($"catalog-items");
++        var itemListTask = _httpService.HttpGet<PagedCatalogItemResponse>($"catalog-items?includeArchived=true");
+         await Task.WhenAll(brandListTask, typeListTask, itemListTask);
+         var brands = brandListTask.Result;
+         var types = typeListTask.Result;
+diff --git a/src/BlazorShared/Interfaces/ICatalogItemService.cs b/src/BlazorShared/Interfaces/ICatalogItemService.cs
+index 7fd0330..c4cc418 100644
+--- a/src/BlazorShared/Interfaces/ICatalogItemService.cs
++++ b/src/BlazorShared/Interfaces/ICatalogItemService.cs
+@@ -9,6 +9,8 @@ public interface ICatalogItemService
+     Task<CatalogItem> Create(CreateCatalogItemRequest catalogItem);
+     Task<CatalogItem> Edit(CatalogItem catalogItem);
+     Task<string> Delete(int id);
++    Task<CatalogItem> Archive(int id);
++    Task<CatalogItem> Unarchive(int id);
+     Task<CatalogItem> GetById(int id);
+     Task<List<CatalogItem>> ListPaged(int pageSize);
+     Task<List<CatalogItem>> List();
+diff --git a/src/BlazorShared/Models/ArchiveCatalogItemResponse.cs b/src/BlazorShared/Models/ArchiveCatalogItemResponse.cs
+new file mode 100644
+index 0000000..980e4fe
+--- /dev/null
++++ b/src/BlazorShared/Models/ArchiveCatalogItemResponse.cs
+@@ -0,0 +1,6 @@
++namespace BlazorShared.Models;
++
++public class ArchiveCatalogItemResponse
++{
++    public CatalogItem CatalogItem { get; set; } = new CatalogItem();
++}
+diff --git a/src/BlazorShared/Models/CatalogItem.cs b/src/BlazorShared/Models/CatalogItem.cs
+index efc3bd1..8a89be4 100644
+--- a/src/BlazorShared/Models/CatalogItem.cs
++++ b/src/BlazorShared/Models/CatalogItem.cs
+@@ -32,6 +32,8 @@ public class CatalogItem
+     public string PictureBase64 { get; set; }
+     public string PictureName { get; set; }
+ 
++    public bool IsArchived { get; set; }
++
+     private const int ImageMaximumBytes = 512000;
+ 
+     public static string IsValidImage(string pictureName, string pictureBase64)
+diff --git a/src/BlazorShared/Models/UnarchiveCatalogItemResponse.cs b/src/BlazorShared/Models/UnarchiveCatalogItemResponse.cs
+new file mode 100644
+index 0000000..f6f8517
+--- /dev/null
++++ b/src/BlazorShared/Models/UnarchiveCatalogItemResponse.cs
+@@ -0,0 +1,6 @@
++namespace BlazorShared.Models;
++
++public class UnarchiveCatalogItemResponse
++{
++    public CatalogItem CatalogItem { get; set; } = new CatalogItem();
++}
+diff --git a/src/Infrastructure/Data/Config/CatalogItemConfiguration.cs b/src/Infrastructure/Data/Config/CatalogItemConfiguration.cs
+index 708131e..88ba54a 100644
+--- a/src/Infrastructure/Data/Config/CatalogItemConfiguration.cs
++++ b/src/Infrastructure/Data/Config/CatalogItemConfiguration.cs
+@@ -25,6 +25,10 @@ public class CatalogItemConfiguration : IEntityTypeConfiguration<CatalogItem>
+         builder.Property(ci => ci.PictureUri)
+             .IsRequired(false);
+ 
++        builder.Property(ci => ci.IsArchived)
++            .IsRequired(true)
++            .HasDefaultValue(false);
++
+         builder.HasOne(ci => ci.CatalogBrand)
+             .WithMany()
+             .HasForeignKey(ci => ci.CatalogBrandId);
+diff --git a/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.Designer.cs b/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.Designer.cs
+new file mode 100644
+index 0000000..ee5c4e9
+--- /dev/null
++++ b/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.Designer.cs
+@@ -0,0 +1,321 @@
++∩╗┐// <auto-generated />
++using System;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.EntityFrameworkCore.Infrastructure;
++using Microsoft.EntityFrameworkCore.Metadata;
++using Microsoft.EntityFrameworkCore.Migrations;
++using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
++using Microsoft.eShopWeb.Infrastructure.Data;
++
++#nullable disable
++
++namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations
++{
++    [DbContext(typeof(CatalogContext))]
++    [Migration("20260803123058_AddCatalogItemIsArchived")]
++    partial class AddCatalogItemIsArchived
++    {
++        /// <inheritdoc />
++        protected override void BuildTargetModel(ModelBuilder modelBuilder)
++        {
++#pragma warning disable 612, 618
++            modelBuilder
++                .HasAnnotation("ProductVersion", "6.0.0")
++                .HasAnnotation("Relational:MaxIdentifierLength", 128);
++
++            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder, 1L, 1);
++
++            modelBuilder.HasSequence("catalog_brand_hilo")
++                .IncrementsBy(10);
++
++            modelBuilder.HasSequence("catalog_hilo")
++                .IncrementsBy(10);
++
++            modelBuilder.HasSequence("catalog_type_hilo")
++                .IncrementsBy(10);
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate.Basket", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
++
++                    b.Property<string>("BuyerId")
++                        .IsRequired()
++                        .HasMaxLength(256)
++                        .HasColumnType("nvarchar(256)");
++
++                    b.HasKey("Id");
++
++                    b.ToTable("Baskets");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate.BasketItem", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
++
++                    b.Property<int>("BasketId")
++                        .HasColumnType("int");
++
++                    b.Property<int>("CatalogItemId")
++                        .HasColumnType("int");
++
++                    b.Property<int>("Quantity")
++                        .HasColumnType("int");
++
++                    b.Property<decimal>("UnitPrice")
++                        .HasColumnType("decimal(18,2)");
++
++                    b.HasKey("Id");
++
++                    b.HasIndex("BasketId");
++
++                    b.ToTable("BasketItems");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogBrand", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseHiLo(b.Property<int>("Id"), "catalog_brand_hilo");
++
++                    b.Property<string>("Brand")
++                        .IsRequired()
++                        .HasMaxLength(100)
++                        .HasColumnType("nvarchar(100)");
++
++                    b.HasKey("Id");
++
++                    b.ToTable("CatalogBrands");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogItem", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseHiLo(b.Property<int>("Id"), "catalog_hilo");
++
++                    b.Property<int>("CatalogBrandId")
++                        .HasColumnType("int");
++
++                    b.Property<int>("CatalogTypeId")
++                        .HasColumnType("int");
++
++                    b.Property<string>("Description")
++                        .HasColumnType("nvarchar(max)");
++
++                    b.Property<bool>("IsArchived")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("bit")
++                        .HasDefaultValue(false);
++
++                    b.Property<string>("Name")
++                        .IsRequired()
++                        .HasMaxLength(50)
++                        .HasColumnType("nvarchar(50)");
++
++                    b.Property<string>("PictureUri")
++                        .HasColumnType("nvarchar(max)");
++
++                    b.Property<decimal>("Price")
++                        .HasColumnType("decimal(18,2)");
++
++                    b.HasKey("Id");
++
++                    b.HasIndex("CatalogBrandId");
++
++                    b.HasIndex("CatalogTypeId");
++
++                    b.ToTable("Catalog", (string)null);
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogType", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseHiLo(b.Property<int>("Id"), "catalog_type_hilo");
++
++                    b.Property<string>("Type")
++                        .IsRequired()
++                        .HasMaxLength(100)
++                        .HasColumnType("nvarchar(100)");
++
++                    b.HasKey("Id");
++
++                    b.ToTable("CatalogTypes");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.Order", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
++
++                    b.Property<string>("BuyerId")
++                        .IsRequired()
++                        .HasMaxLength(256)
++                        .HasColumnType("nvarchar(256)");
++
++                    b.Property<DateTimeOffset>("OrderDate")
++                        .HasColumnType("datetimeoffset");
++
++                    b.HasKey("Id");
++
++                    b.ToTable("Orders");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.OrderItem", b =>
++                {
++                    b.Property<int>("Id")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("int");
++
++                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"), 1L, 1);
++
++                    b.Property<int?>("OrderId")
++                        .HasColumnType("int");
++
++                    b.Property<decimal>("UnitPrice")
++                        .HasColumnType("decimal(18,2)");
++
++                    b.Property<int>("Units")
++                        .HasColumnType("int");
++
++                    b.HasKey("Id");
++
++                    b.HasIndex("OrderId");
++
++                    b.ToTable("OrderItems");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate.BasketItem", b =>
++                {
++                    b.HasOne("Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate.Basket", null)
++                        .WithMany("Items")
++                        .HasForeignKey("BasketId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogItem", b =>
++                {
++                    b.HasOne("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogBrand", "CatalogBrand")
++                        .WithMany()
++                        .HasForeignKey("CatalogBrandId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.HasOne("Microsoft.eShopWeb.ApplicationCore.Entities.CatalogType", "CatalogType")
++                        .WithMany()
++                        .HasForeignKey("CatalogTypeId")
++                        .OnDelete(DeleteBehavior.Cascade)
++                        .IsRequired();
++
++                    b.Navigation("CatalogBrand");
++
++                    b.Navigation("CatalogType");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.Order", b =>
++                {
++                    b.OwnsOne("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.Address", "ShipToAddress", b1 =>
++                        {
++                            b1.Property<int>("OrderId")
++                                .HasColumnType("int");
++
++                            b1.Property<string>("City")
++                                .IsRequired()
++                                .HasMaxLength(100)
++                                .HasColumnType("nvarchar(100)");
++
++                            b1.Property<string>("Country")
++                                .IsRequired()
++                                .HasMaxLength(90)
++                                .HasColumnType("nvarchar(90)");
++
++                            b1.Property<string>("State")
++                                .HasMaxLength(60)
++                                .HasColumnType("nvarchar(60)");
++
++                            b1.Property<string>("Street")
++                                .IsRequired()
++                                .HasMaxLength(180)
++                                .HasColumnType("nvarchar(180)");
++
++                            b1.Property<string>("ZipCode")
++                                .IsRequired()
++                                .HasMaxLength(18)
++                                .HasColumnType("nvarchar(18)");
++
++                            b1.HasKey("OrderId");
++
++                            b1.ToTable("Orders");
++
++                            b1.WithOwner()
++                                .HasForeignKey("OrderId");
++                        });
++
++                    b.Navigation("ShipToAddress")
++                        .IsRequired();
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.OrderItem", b =>
++                {
++                    b.HasOne("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.Order", null)
++                        .WithMany("OrderItems")
++                        .HasForeignKey("OrderId");
++
++                    b.OwnsOne("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.CatalogItemOrdered", "ItemOrdered", b1 =>
++                        {
++                            b1.Property<int>("OrderItemId")
++                                .HasColumnType("int");
++
++                            b1.Property<int>("CatalogItemId")
++                                .HasColumnType("int");
++
++                            b1.Property<string>("PictureUri")
++                                .HasColumnType("nvarchar(max)");
++
++                            b1.Property<string>("ProductName")
++                                .IsRequired()
++                                .HasMaxLength(50)
++                                .HasColumnType("nvarchar(50)");
++
++                            b1.HasKey("OrderItemId");
++
++                            b1.ToTable("OrderItems");
++
++                            b1.WithOwner()
++                                .HasForeignKey("OrderItemId");
++                        });
++
++                    b.Navigation("ItemOrdered");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.BasketAggregate.Basket", b =>
++                {
++                    b.Navigation("Items");
++                });
++
++            modelBuilder.Entity("Microsoft.eShopWeb.ApplicationCore.Entities.OrderAggregate.Order", b =>
++                {
++                    b.Navigation("OrderItems");
++                });
++#pragma warning restore 612, 618
++        }
++    }
++}
+diff --git a/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.cs b/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.cs
+new file mode 100644
+index 0000000..cd43ae2
+--- /dev/null
++++ b/src/Infrastructure/Data/Migrations/20260803123058_AddCatalogItemIsArchived.cs
+@@ -0,0 +1,29 @@
++using Microsoft.EntityFrameworkCore.Migrations;
++
++#nullable disable
++
++namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations
++{
++    /// <inheritdoc />
++    public partial class AddCatalogItemIsArchived : Migration
++    {
++        /// <inheritdoc />
++        protected override void Up(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.AddColumn<bool>(
++                name: "IsArchived",
++                table: "Catalog",
++                type: "bit",
++                nullable: false,
++                defaultValue: false);
++        }
++
++        /// <inheritdoc />
++        protected override void Down(MigrationBuilder migrationBuilder)
++        {
++            migrationBuilder.DropColumn(
++                name: "IsArchived",
++                table: "Catalog");
++        }
++    }
++}
+diff --git a/src/Infrastructure/Data/Migrations/CatalogContextModelSnapshot.cs b/src/Infrastructure/Data/Migrations/CatalogContextModelSnapshot.cs
+index 81b8c3e..ce344ac 100644
+--- a/src/Infrastructure/Data/Migrations/CatalogContextModelSnapshot.cs
++++ b/src/Infrastructure/Data/Migrations/CatalogContextModelSnapshot.cs
+@@ -111,6 +111,11 @@ namespace Microsoft.eShopWeb.Infrastructure.Data.Migrations
+                     b.Property<string>("Description")
+                         .HasColumnType("nvarchar(max)");
+ 
++                    b.Property<bool>("IsArchived")
++                        .ValueGeneratedOnAdd()
++                        .HasColumnType("bit")
++                        .HasDefaultValue(false);
++
+                     b.Property<string>("Name")
+                         .IsRequired()
+                         .HasMaxLength(50)
+diff --git a/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemRequest.cs b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemRequest.cs
+new file mode 100644
+index 0000000..f36cb28
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemRequest.cs
+@@ -0,0 +1,11 @@
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++public class ArchiveCatalogItemRequest : BaseRequest
++{
++    public int CatalogItemId { get; init; }
++
++    public ArchiveCatalogItemRequest(int catalogItemId)
++    {
++        CatalogItemId = catalogItemId;
++    }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemResponse.cs b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemResponse.cs
+new file mode 100644
+index 0000000..36eeb3a
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.ArchiveCatalogItemResponse.cs
+@@ -0,0 +1,16 @@
++using System;
++
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++public class ArchiveCatalogItemResponse : BaseResponse
++{
++    public ArchiveCatalogItemResponse(Guid correlationId) : base(correlationId)
++    {
++    }
++
++    public ArchiveCatalogItemResponse()
++    {
++    }
++
++    public CatalogItemDto CatalogItem { get; set; }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.cs
+new file mode 100644
+index 0000000..42644bc
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/ArchiveCatalogItemEndpoint.cs
+@@ -0,0 +1,55 @@
++using System.Threading.Tasks;
++using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Authorization;
++using Microsoft.AspNetCore.Builder;
++using Microsoft.AspNetCore.Http;
++using Microsoft.AspNetCore.Routing;
++using Microsoft.eShopWeb.ApplicationCore.Entities;
++using Microsoft.eShopWeb.ApplicationCore.Interfaces;
++using MinimalApi.Endpoint;
++
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++/// <summary>
++/// Archives a Catalog Item so it is no longer visible to customers in the store
++/// </summary>
++public class ArchiveCatalogItemEndpoint : IEndpoint<IResult, ArchiveCatalogItemRequest, IRepository<CatalogItem>>
++{
++    public void AddRoute(IEndpointRouteBuilder app)
++    {
++        app.MapPut("api/catalog-items/{catalogItemId}/archive",
++            [Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
++            (int catalogItemId, IRepository<CatalogItem> itemRepository) =>
++            {
++                return await HandleAsync(new ArchiveCatalogItemRequest(catalogItemId), itemRepository);
++            })
++            .Produces<ArchiveCatalogItemResponse>()
++            .WithTags("CatalogItemEndpoints");
++    }
++
++    public async Task<IResult> HandleAsync(ArchiveCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
++    {
++        var response = new ArchiveCatalogItemResponse(request.CorrelationId());
++
++        var itemToArchive = await itemRepository.GetByIdAsync(request.CatalogItemId);
++        if (itemToArchive is null)
++            return Results.NotFound();
++
++        itemToArchive.Archive();
++        await itemRepository.UpdateAsync(itemToArchive);
++
++        response.CatalogItem = new CatalogItemDto
++        {
++            Id = itemToArchive.Id,
++            CatalogBrandId = itemToArchive.CatalogBrandId,
++            CatalogTypeId = itemToArchive.CatalogTypeId,
++            Description = itemToArchive.Description,
++            Name = itemToArchive.Name,
++            PictureUri = itemToArchive.PictureUri,
++            Price = itemToArchive.Price,
++            IsArchived = itemToArchive.IsArchived
++        };
++
++        return Results.Ok(response);
++    }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/CatalogItemDto.cs b/src/PublicApi/CatalogItemEndpoints/CatalogItemDto.cs
+index edee27a..9db952e 100644
+--- a/src/PublicApi/CatalogItemEndpoints/CatalogItemDto.cs
++++ b/src/PublicApi/CatalogItemEndpoints/CatalogItemDto.cs
+@@ -9,4 +9,5 @@ public class CatalogItemDto
+     public string PictureUri { get; set; }
+     public int CatalogTypeId { get; set; }
+     public int CatalogBrandId { get; set; }
++    public bool IsArchived { get; set; }
+ }
+diff --git a/src/PublicApi/CatalogItemEndpoints/CatalogItemGetByIdEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/CatalogItemGetByIdEndpoint.cs
+index 9f15c72..ce912a7 100644
+--- a/src/PublicApi/CatalogItemEndpoints/CatalogItemGetByIdEndpoint.cs
++++ b/src/PublicApi/CatalogItemEndpoints/CatalogItemGetByIdEndpoint.cs
+@@ -47,7 +47,8 @@ public class CatalogItemGetByIdEndpoint : IEndpoint<IResult, GetByIdCatalogItemR
+             Description = item.Description,
+             Name = item.Name,
+             PictureUri = _uriComposer.ComposePicUri(item.PictureUri),
+-            Price = item.Price
++            Price = item.Price,
++            IsArchived = item.IsArchived
+         };
+         return Results.Ok(response);
+     }
+diff --git a/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.ListPagedCatalogItemRequest.cs b/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.ListPagedCatalogItemRequest.cs
+index 19691af..a3de3fc 100644
+--- a/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.ListPagedCatalogItemRequest.cs
++++ b/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.ListPagedCatalogItemRequest.cs
+@@ -6,12 +6,14 @@ public class ListPagedCatalogItemRequest : BaseRequest
+     public int PageIndex { get; init; }
+     public int? CatalogBrandId { get; init; }
+     public int? CatalogTypeId { get; init; }
++    public bool IncludeArchived { get; init; }
+ 
+-    public ListPagedCatalogItemRequest(int? pageSize, int? pageIndex, int? catalogBrandId, int? catalogTypeId)
++    public ListPagedCatalogItemRequest(int? pageSize, int? pageIndex, int? catalogBrandId, int? catalogTypeId, bool? includeArchived = null)
+     {
+         PageSize = pageSize ?? 0;
+         PageIndex = pageIndex ?? 0;
+         CatalogBrandId = catalogBrandId;
+         CatalogTypeId = catalogTypeId;
++        IncludeArchived = includeArchived ?? false;
+     }
+ }
+diff --git a/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs
+index 3e36d2f..dc1c362 100644
+--- a/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs
++++ b/src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs
+@@ -29,9 +29,9 @@ public class CatalogItemListPagedEndpoint : IEndpoint<IResult, ListPagedCatalogI
+     public void AddRoute(IEndpointRouteBuilder app)
+     {
+         app.MapGet("api/catalog-items",
+-            async (int? pageSize, int? pageIndex, int? catalogBrandId, int? catalogTypeId, IRepository<CatalogItem> itemRepository) =>
++            async (int? pageSize, int? pageIndex, int? catalogBrandId, int? catalogTypeId, bool? includeArchived, IRepository<CatalogItem> itemRepository) =>
+             {
+-                return await HandleAsync(new ListPagedCatalogItemRequest(pageSize, pageIndex, catalogBrandId, catalogTypeId), itemRepository);
++                return await HandleAsync(new ListPagedCatalogItemRequest(pageSize, pageIndex, catalogBrandId, catalogTypeId, includeArchived), itemRepository);
+             })
+             .Produces<ListPagedCatalogItemResponse>()
+             .WithTags("CatalogItemEndpoints");
+@@ -42,14 +42,15 @@ public class CatalogItemListPagedEndpoint : IEndpoint<IResult, ListPagedCatalogI
+         await Task.Delay(1000);
+         var response = new ListPagedCatalogItemResponse(request.CorrelationId());
+ 
+-        var filterSpec = new CatalogFilterSpecification(request.CatalogBrandId, request.CatalogTypeId);
++        var filterSpec = new CatalogFilterSpecification(request.CatalogBrandId, request.CatalogTypeId, request.IncludeArchived);
+         int totalItems = await itemRepository.CountAsync(filterSpec);
+ 
+         var pagedSpec = new CatalogFilterPaginatedSpecification(
+             skip: request.PageIndex * request.PageSize,
+             take: request.PageSize,
+             brandId: request.CatalogBrandId,
+-            typeId: request.CatalogTypeId);
++            typeId: request.CatalogTypeId,
++            includeArchived: request.IncludeArchived);
+ 
+         var items = await itemRepository.ListAsync(pagedSpec);
+ 
+diff --git a/src/PublicApi/CatalogItemEndpoints/CreateCatalogItemEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/CreateCatalogItemEndpoint.cs
+index c15346f..8867e21 100644
+--- a/src/PublicApi/CatalogItemEndpoints/CreateCatalogItemEndpoint.cs
++++ b/src/PublicApi/CatalogItemEndpoints/CreateCatalogItemEndpoint.cs
+@@ -68,7 +68,8 @@ public class CreateCatalogItemEndpoint : IEndpoint<IResult, CreateCatalogItemReq
+             Description = newItem.Description,
+             Name = newItem.Name,
+             PictureUri = _uriComposer.ComposePicUri(newItem.PictureUri),
+-            Price = newItem.Price
++            Price = newItem.Price,
++            IsArchived = newItem.IsArchived
+         };
+         response.CatalogItem = dto;
+         return Results.Created($"api/catalog-items/{dto.Id}", response);
+diff --git a/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemRequest.cs b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemRequest.cs
+new file mode 100644
+index 0000000..15cd05a
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemRequest.cs
+@@ -0,0 +1,11 @@
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++public class UnarchiveCatalogItemRequest : BaseRequest
++{
++    public int CatalogItemId { get; init; }
++
++    public UnarchiveCatalogItemRequest(int catalogItemId)
++    {
++        CatalogItemId = catalogItemId;
++    }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemResponse.cs b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemResponse.cs
+new file mode 100644
+index 0000000..b4d88a7
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.UnarchiveCatalogItemResponse.cs
+@@ -0,0 +1,16 @@
++using System;
++
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++public class UnarchiveCatalogItemResponse : BaseResponse
++{
++    public UnarchiveCatalogItemResponse(Guid correlationId) : base(correlationId)
++    {
++    }
++
++    public UnarchiveCatalogItemResponse()
++    {
++    }
++
++    public CatalogItemDto CatalogItem { get; set; }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.cs
+new file mode 100644
+index 0000000..ea2aa9a
+--- /dev/null
++++ b/src/PublicApi/CatalogItemEndpoints/UnarchiveCatalogItemEndpoint.cs
+@@ -0,0 +1,55 @@
++using System.Threading.Tasks;
++using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Authorization;
++using Microsoft.AspNetCore.Builder;
++using Microsoft.AspNetCore.Http;
++using Microsoft.AspNetCore.Routing;
++using Microsoft.eShopWeb.ApplicationCore.Entities;
++using Microsoft.eShopWeb.ApplicationCore.Interfaces;
++using MinimalApi.Endpoint;
++
++namespace Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++
++/// <summary>
++/// Unarchives a Catalog Item so it is visible to customers in the store again
++/// </summary>
++public class UnarchiveCatalogItemEndpoint : IEndpoint<IResult, UnarchiveCatalogItemRequest, IRepository<CatalogItem>>
++{
++    public void AddRoute(IEndpointRouteBuilder app)
++    {
++        app.MapPut("api/catalog-items/{catalogItemId}/unarchive",
++            [Authorize(Roles = BlazorShared.Authorization.Constants.Roles.ADMINISTRATORS, AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)] async
++            (int catalogItemId, IRepository<CatalogItem> itemRepository) =>
++            {
++                return await HandleAsync(new UnarchiveCatalogItemRequest(catalogItemId), itemRepository);
++            })
++            .Produces<UnarchiveCatalogItemResponse>()
++            .WithTags("CatalogItemEndpoints");
++    }
++
++    public async Task<IResult> HandleAsync(UnarchiveCatalogItemRequest request, IRepository<CatalogItem> itemRepository)
++    {
++        var response = new UnarchiveCatalogItemResponse(request.CorrelationId());
++
++        var itemToUnarchive = await itemRepository.GetByIdAsync(request.CatalogItemId);
++        if (itemToUnarchive is null)
++            return Results.NotFound();
++
++        itemToUnarchive.Unarchive();
++        await itemRepository.UpdateAsync(itemToUnarchive);
++
++        response.CatalogItem = new CatalogItemDto
++        {
++            Id = itemToUnarchive.Id,
++            CatalogBrandId = itemToUnarchive.CatalogBrandId,
++            CatalogTypeId = itemToUnarchive.CatalogTypeId,
++            Description = itemToUnarchive.Description,
++            Name = itemToUnarchive.Name,
++            PictureUri = itemToUnarchive.PictureUri,
++            Price = itemToUnarchive.Price,
++            IsArchived = itemToUnarchive.IsArchived
++        };
++
++        return Results.Ok(response);
++    }
++}
+diff --git a/src/PublicApi/CatalogItemEndpoints/UpdateCatalogItemEndpoint.cs b/src/PublicApi/CatalogItemEndpoints/UpdateCatalogItemEndpoint.cs
+index 15efa68..ca4a489 100644
+--- a/src/PublicApi/CatalogItemEndpoints/UpdateCatalogItemEndpoint.cs
++++ b/src/PublicApi/CatalogItemEndpoints/UpdateCatalogItemEndpoint.cs
+@@ -59,7 +59,8 @@ public class UpdateCatalogItemEndpoint : IEndpoint<IResult, UpdateCatalogItemReq
+             Description = existingItem.Description,
+             Name = existingItem.Name,
+             PictureUri = _uriComposer.ComposePicUri(existingItem.PictureUri),
+-            Price = existingItem.Price
++            Price = existingItem.Price,
++            IsArchived = existingItem.IsArchived
+         };
+         response.CatalogItem = dto;
+         return Results.Ok(response);
+diff --git a/tests/FunctionalTests/Web/Controllers/CatalogControllerIndex.cs b/tests/FunctionalTests/Web/Controllers/CatalogControllerIndex.cs
+index 82c804b..a20b01c 100644
+--- a/tests/FunctionalTests/Web/Controllers/CatalogControllerIndex.cs
++++ b/tests/FunctionalTests/Web/Controllers/CatalogControllerIndex.cs
+@@ -1,5 +1,13 @@
+-∩╗┐using System.Net.Http;
++∩╗┐using System.Linq;
++using System.Net.Http;
+ using System.Threading.Tasks;
++using Microsoft.eShopWeb.ApplicationCore.Entities;
++using Microsoft.eShopWeb.ApplicationCore.Interfaces;
++using Microsoft.eShopWeb.ApplicationCore.Specifications;
++using Microsoft.eShopWeb.Web;
++using Microsoft.eShopWeb.Web.Extensions;
++using Microsoft.Extensions.Caching.Memory;
++using Microsoft.Extensions.DependencyInjection;
+ using Xunit;
+ 
+ namespace Microsoft.eShopWeb.FunctionalTests.Web.Controllers;
+@@ -7,8 +15,11 @@ namespace Microsoft.eShopWeb.FunctionalTests.Web.Controllers;
+ [Collection("Sequential")]
+ public class CatalogControllerIndex : IClassFixture<TestApplication>
+ {
++    private readonly TestApplication _factory;
++
+     public CatalogControllerIndex(TestApplication factory)
+     {
++        _factory = factory;
+         Client = factory.CreateClient();
+     }
+ 
+@@ -25,4 +36,42 @@ public class CatalogControllerIndex : IClassFixture<TestApplication>
+         // Assert
+         Assert.Contains(".NET Bot Black Sweatshirt", stringResponse);
+     }
++
++    [Fact]
++    public async Task DoesNotShowArchivedItemsOnHomePage()
++    {
++        // Arrange
++        using (var scope = _factory.Services.CreateScope())
++        {
++            var itemRepository = scope.ServiceProvider.GetRequiredService<IRepository<CatalogItem>>();
++            var item = (await itemRepository.ListAsync(new CatalogItemsSpecification(1))).Single();
++            item.Archive();
++            await itemRepository.UpdateAsync(item);
++        }
++
++        try
++        {
++            // Act
++            var response = await Client.GetAsync("/");
++            response.EnsureSuccessStatusCode();
++            var stringResponse = await response.Content.ReadAsStringAsync();
++
++            // Assert
++            Assert.DoesNotContain(".NET Bot Black Sweatshirt", stringResponse);
++        }
++        finally
++        {
++            // Cleanup so other tests relying on this seeded item are unaffected
++            using var scope = _factory.Services.CreateScope();
++            var itemRepository = scope.ServiceProvider.GetRequiredService<IRepository<CatalogItem>>();
++            var item = (await itemRepository.ListAsync(new CatalogItemsSpecification(1))).Single();
++            item.Unarchive();
++            await itemRepository.UpdateAsync(item);
++
++            // The homepage catalog listing is memory-cached; evict the entry this test primed
++            // with the archived-item result so other tests see the restored state immediately.
++            var cache = scope.ServiceProvider.GetRequiredService<IMemoryCache>();
++            cache.Remove(CacheHelpers.GenerateCatalogItemCacheKey(0, Constants.ITEMS_PER_PAGE, null, null));
++        }
++    }
+ }
+diff --git a/tests/PublicApiIntegrationTests/CatalogItemEndpoints/ArchiveCatalogItemEndpointTest.cs b/tests/PublicApiIntegrationTests/CatalogItemEndpoints/ArchiveCatalogItemEndpointTest.cs
+new file mode 100644
+index 0000000..3e64fdd
+--- /dev/null
++++ b/tests/PublicApiIntegrationTests/CatalogItemEndpoints/ArchiveCatalogItemEndpointTest.cs
+@@ -0,0 +1,73 @@
++using Microsoft.eShopWeb;
++using Microsoft.eShopWeb.PublicApi.CatalogItemEndpoints;
++using Microsoft.VisualStudio.TestTools.UnitTesting;
++using System.Net;
++using System.Net.Http.Headers;
++using System.Threading.Tasks;
++
++namespace PublicApiIntegrationTests.CatalogItemEndpoints;
++
++[TestClass]
++public class ArchiveCatalogItemEndpointTest
++{
++    [TestMethod]
++    public async Task ReturnsNotAuthorizedGivenNormalUserToken()
++    {
++        var token = ApiTokenHelper.GetNormalUserToken();
++        var client = ProgramTest.NewClient;
++        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
++        var response = await client.PutAsync("api/catalog-items/1/archive", null);
++
++        Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
++    }
++
++    [TestMethod]
++    public async Task ReturnsSuccessGivenValidIdAndAdminUserToken()
++    {
++        var adminToken = ApiTokenHelper.GetAdminUserToken();
++        var client = ProgramTest.NewClient;
++        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
++        var response = await client.PutAsync("api/catalog-items/1/archive", null);
++        response.EnsureSuccessStatusCode();
++        var stringResponse = await response.Content.ReadAsStringAsync();
++        var model = stringResponse.FromJson<ArchiveCatalogItemResponse>();
++
++        Assert.IsTrue(model!.CatalogItem.IsArchived);
++
++        // restore state for other tests relying on this seeded item
++        await client.PutAsync("api/catalog-items/1/unarchive", null);
++    }
++
++    [TestMethod]
++    public async Task ReturnsNotFoundGivenInvalidIdAndAdminUserToken()
++    {
++        var adminToken = ApiTokenHelper.GetAdminUserToken();
++        var client = ProgramTest.NewClient;
++        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
++        var response = await client.PutAsync("api/catalog-items/0/archive", null);
++
++        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
++    }
++
++    [TestMethod]
++    public async Task ArchivedItemIsExcludedFromDefaultListButIncludedWhenRequested()
++    {
++        var adminToken = ApiTokenHelper.GetAdminUserToken();
++        var client = ProgramTest.NewClient;
++        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
++
++        var archiveResponse = await client.PutAsync("api/catalog-items/2/archive", null);
++        archiveResponse.EnsureSuccessStatusCode();
++
++        var defaultListResponse = await client.GetAsync("api/catalog-items?pageSize=100");
++        var defaultList = (await defaultListResponse.Content.ReadAsStringAsync()).FromJson<ListPagedCatalogItemResponse>();
++        Assert.IsFalse(defaultList!.CatalogItems.Exists(i => i.Id == 2));
++
++        var includeArchivedResponse = await client.GetAsync("api/catalog-items?pageSize=100&includeArchived=true");
++        var includeArchivedList = (await includeArchivedResponse.Content.ReadAsStringAsync()).FromJson<ListPagedCatalogItemResponse>();
++        Assert.IsTrue(includeArchivedList!.CatalogItems.Exists(i => i.Id == 2 && i.IsArchived));
++
++        // restore state for other tests relying on this seeded item
++        await client.PutAsync("api/catalog-items/2/unarchive", null);
++    }
++}
+diff --git a/tests/UnitTests/ApplicationCore/Entities/CatalogItemTests/Archiving.cs b/tests/UnitTests/ApplicationCore/Entities/CatalogItemTests/Archiving.cs
+new file mode 100644
+index 0000000..2626d6b
+--- /dev/null
++++ b/tests/UnitTests/ApplicationCore/Entities/CatalogItemTests/Archiving.cs
+@@ -0,0 +1,36 @@
++using Microsoft.eShopWeb.ApplicationCore.Entities;
++using Xunit;
++
++namespace Microsoft.eShopWeb.UnitTests.ApplicationCore.Entities.CatalogItemTests;
++
++public class Archiving
++{
++    [Fact]
++    public void IsNotArchivedByDefault()
++    {
++        var item = new CatalogItem(1, 1, "Description", "Name", 10, "FakePath");
++
++        Assert.False(item.IsArchived);
++    }
++
++    [Fact]
++    public void ArchiveSetsIsArchivedTrue()
++    {
++        var item = new CatalogItem(1, 1, "Description", "Name", 10, "FakePath");
++
++        item.Archive();
++
++        Assert.True(item.IsArchived);
++    }
++
++    [Fact]
++    public void UnarchiveSetsIsArchivedFalse()
++    {
++        var item = new CatalogItem(1, 1, "Description", "Name", 10, "FakePath");
++        item.Archive();
++
++        item.Unarchive();
++
++        Assert.False(item.IsArchived);
++    }
++}
+diff --git a/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs b/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
+index 5ac89a2..bded0f5 100644
+--- a/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
++++ b/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterPaginatedSpecification.cs
+@@ -27,6 +27,33 @@ public class CatalogFilterPaginatedSpecification
+         Assert.Equal(2, result.ToList().Count);
+     }
+ 
++    [Fact]
++    public void ExcludesArchivedItemsByDefault()
++    {
++        var items = GetTestCollection();
++        items[0].Archive();
++
++        var spec = new eShopWeb.ApplicationCore.Specifications.CatalogFilterPaginatedSpecification(0, 10, null, null);
++
++        var result = spec.Evaluate(items).ToList();
++
++        Assert.Equal(3, result.Count);
++        Assert.DoesNotContain(result, i => i.IsArchived);
++    }
++
++    [Fact]
++    public void IncludesArchivedItemsWhenRequested()
++    {
++        var items = GetTestCollection();
++        items[0].Archive();
++
++        var spec = new eShopWeb.ApplicationCore.Specifications.CatalogFilterPaginatedSpecification(0, 10, null, null, includeArchived: true);
++
++        var result = spec.Evaluate(items).ToList();
++
++        Assert.Equal(4, result.Count);
++    }
++
+     private List<CatalogItem> GetTestCollection()
+     {
+         var catalogItemList = new List<CatalogItem>();
+diff --git a/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterSpecification.cs b/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterSpecification.cs
+index cb065df..190763f 100644
+--- a/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterSpecification.cs
++++ b/tests/UnitTests/ApplicationCore/Specifications/CatalogFilterSpecification.cs
+@@ -24,6 +24,33 @@ public class CatalogFilterSpecification
+         Assert.Equal(expectedCount, result.Count());
+     }
+ 
++    [Fact]
++    public void ExcludesArchivedItemsByDefault()
++    {
++        var items = GetTestItemCollection();
++        items[0].Archive();
++
++        var spec = new eShopWeb.ApplicationCore.Specifications.CatalogFilterSpecification(null, null);
++
++        var result = spec.Evaluate(items).ToList();
++
++        Assert.Equal(4, result.Count);
++        Assert.DoesNotContain(result, i => i.IsArchived);
++    }
++
++    [Fact]
++    public void IncludesArchivedItemsWhenRequested()
++    {
++        var items = GetTestItemCollection();
++        items[0].Archive();
++
++        var spec = new eShopWeb.ApplicationCore.Specifications.CatalogFilterSpecification(null, null, includeArchived: true);
++
++        var result = spec.Evaluate(items).ToList();
++
++        Assert.Equal(5, result.Count);
++    }
++
+     public List<CatalogItem> GetTestItemCollection()
+     {
+         return new List<CatalogItem>()

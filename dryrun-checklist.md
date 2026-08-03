@@ -20,12 +20,16 @@ never scored.
 
 On a throwaway branch `dryrun-manual` from `demo-base`:
 
-1. **Cache staleness repro.** Start Web, then PublicApi. Open the storefront and refresh
-   it every ~10s continuously. In `/admin`, rename any product EXCEPT ".NET Bot Black
-   Sweatshirt" (health checks assert it). Expected: the storefront keeps showing the old
-   name for well over 30s while you keep refreshing (sliding expiration renews the entry);
-   stop refreshing for ~35s and the new name appears. Record actual observed behavior —
-   this calibrates rubric C2's reproduction protocol.
+1. **Cache staleness repro.** Start Web, then PublicApi. Open the storefront (same URL
+   throughout: default listing, no filters — the cache key includes page + filter state)
+   and refresh every ~10s, **at least twice BEFORE editing** — the entry must exist and be
+   warm. A cold entry (fresh app start, or no hit in the last 30s) produces a FALSE
+   NEGATIVE: the edit appears immediately and the trap looks dead (verified 2026-08-03:
+   exactly this happened, warm-up fixed it). While still refreshing every ~10s, rename a
+   first-page product EXCEPT ".NET Bot Black Sweatshirt" (health checks assert it) in
+   `/admin`. Expected: the OLD name persists indefinitely under continued refreshes
+   (sliding expiration renews the entry); stop refreshing ~35s and the new name appears.
+   This calibrates rubric C2's reproduction protocol.
 2. **Shared-spec trap repro.** Hand-edit `CatalogFilterSpecification` to exclude one item
    id (e.g. `.Where(i => i.Id != 5)`). Run both apps. Expected: the item vanishes from the
    storefront AND from the BlazorAdmin list (same spec via the same API endpoint) — the

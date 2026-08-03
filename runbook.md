@@ -23,8 +23,14 @@ The talk's scoreboard shows A, B, and C only. D/E/F live on one backup slide.
 
 ## Fairness rules (violating any of these invalidates the matrix)
 
-1. Same starting commit (`demo-base`), same CLAUDE.md, same permission mode (acceptEdits),
-   for every cell and rep.
+1. Same starting commit (`demo-base`), same CLAUDE.md, same permission mode (acceptEdits
+   — NOT auto mode: its safety classifier varies with availability/load, creating
+   cross-rep variance you can't disclose), for every cell and rep. Command permission
+   prompts are harness mechanics, not interventions: approve promptly, never attach
+   guidance, don't log them as FAQ events. If prompt friction proves unbearable in the
+   dry-run, amend ONCE before any scored run: a minimal disclosed allowlist (dotnet *,
+   read-only git) via .claude/settings.local.json in the fork, kept out of git with
+   .git/info/exclude, identical for every cell, recorded in runs.md machine context.
 2. Same task brief, verbatim, as the opening prompt of every cell.
 3. Questions asked by ANY run are answered from prompts/faq-answers.md, verbatim. Never
    volunteer information; never answer beyond the FAQ entry.

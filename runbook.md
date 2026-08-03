@@ -111,6 +111,23 @@ Freebies the rubric also checks: past orders unaffected (orders snapshot catalog
 comes free, but should be VERIFIED/stated); the vestigial server-rendered admin edit page;
 health checks assert the ".NET Bot Black Sweatshirt" seed item (don't archive it in demos).
 
+## Measurement protocol (rubric K)
+
+- **K1 tokens** — from the session transcript JSONLs (authoritative; every API call logs
+  usage): run `measure-session.ps1` after each session (planned reps: `-Last N` to cover
+  all of the rep's sessions). Record all four numbers (input, output, cacheCreate,
+  cacheRead) in the rep's runs/ folder; the scoreboard's primary figure is OUTPUT tokens,
+  full breakdown on the backup slide. Cross-check ONE rep against `/cost` once to confirm
+  subagent usage isn't undercounted.
+- **K2 duration** — two values: *wall* (rep.ps1 start→finish, includes operator gaps) and
+  *active* (sum of per-session activeSpan from measure-session.ps1). The slide uses
+  active; wall is disclosed.
+- **K3** — session count + FAQ answers given (from the question log).
+- **Effort** — all cells at the model's DEFAULT (Sonnet 5 default = high); record
+  "default (<effective>)" per rep next to the model ID.
+- Take the `/context` screenshot and a `/cost` screenshot at each session's end as backup
+  evidence for the slide assets.
+
 ## Session hygiene
 
 - One rep = one fresh branch + fresh session(s). /clear does not substitute for a fresh

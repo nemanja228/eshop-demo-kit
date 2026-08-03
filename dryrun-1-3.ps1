@@ -42,9 +42,14 @@ $dirty = git -C $RepoDir status --porcelain
 if ($dirty) { Fail "working tree is not clean - commit/stash/revert first:`n$($dirty -join "`n")" }
 Ok "working tree clean"
 
-$running = Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -match 'eShopOnWeb' }
-if ($running) { Fail "eShopOnWeb app processes are running (PIDs: $($running.ProcessId -join ', ')). Stop them first." }
+# 'dotnet run' spawns the app as an apphost (Web.exe / PublicApi.exe), so sweep those
+# too - killing only dotnet.exe leaves orphans that hold ports and lock DLLs.
+function Get-EshopProcs {
+    Get-CimInstance Win32_Process -Filter "Name='dotnet.exe' OR Name='Web.exe' OR Name='PublicApi.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { ($_.CommandLine -match 'eShopOnWeb') -or ($_.ExecutablePath -match 'eShopOnWeb') }
+}
+$running = Get-EshopProcs
+if ($running) { Fail "eShopOnWeb app processes are running: $(($running | ForEach-Object { "$($_.Name) $($_.ProcessId)" }) -join ', '). Stop them first." }
 Ok "no app processes running"
 
 Push-Location $webDir
@@ -93,17 +98,38 @@ try {
 
     Info "C2. Starting Web once to verify auto-migrate + re-seed (takes ~30-60s)..."
     $proc = Start-Process dotnet -ArgumentList 'run', '--launch-profile', 'Web' -WorkingDirectory $webDir -PassThru -WindowStyle Hidden
-    $deadline = (Get-Date).AddSeconds(120); $seeded = $false
+    # The http poll gets redirected to https; tolerate an untrusted dev cert so the check
+    # reports seeding truthfully. NOTE: in Windows PowerShell 5.1 a *scriptblock*
+    # ServerCertificateValidationCallback breaks every request ("unexpected error on a
+    # send") - it must be a compiled delegate, hence Add-Type.
+    $iwrArgs = @{}
+    if ($PSVersionTable.PSVersion.Major -ge 6) { $iwrArgs['SkipCertificateCheck'] = $true }
+    else {
+        if (-not ('DemoCertTrust' -as [type])) {
+            Add-Type @"
+using System.Net;
+public static class DemoCertTrust {
+    public static void Enable() {
+        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+    }
+}
+"@
+        }
+        [DemoCertTrust]::Enable()
+    }
+    $deadline = (Get-Date).AddSeconds(240); $seeded = $false
     while ((Get-Date) -lt $deadline) {
         try {
-            $r = Invoke-WebRequest -Uri 'http://localhost:5000/' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            $r = Invoke-WebRequest -Uri 'http://localhost:5000/' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop @iwrArgs
             if ($r.StatusCode -eq 200 -and $r.Content -match '\.NET Bot Black Sweatshirt') { $seeded = $true; break }
         } catch { Start-Sleep -Seconds 3 }
     }
-    # stop the app (dotnet run spawns a child; kill by command line, not just the parent)
-    Get-CimInstance Win32_Process -Filter "Name='dotnet.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match 'eShopOnWeb' } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    # stop the app: the parent we started AND the apphost children (Web.exe etc.)
+    Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+    Get-EshopProcs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+    $leftover = Get-EshopProcs
+    if ($leftover) { Fail "app processes survived the kill: $(($leftover | ForEach-Object { "$($_.Name) $($_.ProcessId)" }) -join ', ') - stop them by hand" }
     if (-not $seeded) { Fail "storefront did not come back seeded within 120s - investigate before relying on this reset method" }
     Ok "databases recreated + reseeded (storefront 200 with seeded item)"
 }

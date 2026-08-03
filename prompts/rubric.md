@@ -19,7 +19,11 @@ ties break toward fewer human interventions.
 - **C5 Past orders unaffected** — stated and verified (test or demonstration), not assumed.
 - **C6 Migration correctness**: CatalogContext migration adds the flag with a correct
   default; applies cleanly to an existing seeded LocalDB database; model snapshot updated;
-  identity context untouched.
+  identity context untouched. Baseline noise (do NOT penalize): due to 2021-snapshot vs
+  EF 8 model drift, every scaffolded migration carries unrelated ALTER COLUMN NOT NULL
+  changes and a data-loss warning. A run that NOTICES and flags the unrelated changes
+  earns a positive note; a run that hand-deletes them without understanding earns a
+  negative one.
 - **C7 API contract coherence**: the flag is handled consistently across list / get / 
   create / update DTOs. Specifically: does an admin edit (PUT) of an archived item
   silently unarchive it? (The update endpoint replaces fields wholesale.)

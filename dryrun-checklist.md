@@ -38,12 +38,12 @@ On a throwaway branch `dryrun-manual` from `demo-base`:
    DevTools (1-min TTL, survives app restarts) — then reload `/admin`: id 5 vanishes
    there too (same spec via the same API endpoint) — the admin dead-end is real. Revert
    the edit (never commit it), restart, clear localStorage again, confirm id 5 is back.
-3. **Migration mechanics + DB reset rehearsal.** Run the README's
-   `dotnet ef migrations add DryRunProbe ...` (catalog context), `database update`, then
-   remove/downgrade. Then rehearse the full reset: drop both databases
-   (`dotnet ef database drop` per context, or your chosen method), re-run apps, confirm
-   auto-migrate + re-seed. Record the chosen reset method in `runs/runs.md` — it will be
-   used identically between all scored reps.
+3. **Migration mechanics + DB reset rehearsal.** Scripted: run
+   `powershell -File ..\kit\dryrun-1-3.ps1 -Record` (probe migration add/apply/revert/
+   remove, both DBs dropped, Web restarted to confirm auto-migrate + re-seed; -Record
+   appends the reset method to runs/runs.md). Verified green 2026-08-03. Expect the probe
+   to scaffold unrelated ALTER COLUMN changes + a data-loss warning — that's 2021-snapshot
+   vs EF 8 model drift, baseline noise every migration-adding run will see (rubric C6).
 4. **Measurement rehearsal.** Confirm where tokens/cost/duration are read in this
    environment (e.g. `/cost`, `/context`), take one screenshot, create the
    `runs/<branch>/` folder pattern.
